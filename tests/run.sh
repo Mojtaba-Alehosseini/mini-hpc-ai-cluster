@@ -27,10 +27,34 @@ wait_state() {  # wait_state <jobid> <regex of final states> [timeout s]
     echo "job $job still $s after $t s"; return 1
 }
 
-t01() {  # sinfo shows c1, c2 idle in cpu and c1 in debug
+t01() {  # sinfo shows c1, c2 idle in cpu, c1 in debug, g1 idle in gpu
     local out; out=$(hd sinfo -h -o '%P %t %N')
     echo "$out"
-    grep -Eq '^cpu\* idle c\[1-2\]$' <<<"$out" && grep -Eq '^debug idle c1$' <<<"$out"
+    grep -Eq '^cpu\* idle c\[1-2\]$' <<<"$out" \
+        && grep -Eq '^debug idle c1$' <<<"$out" \
+        && grep -Eq '^gpu idle g1$' <<<"$out"
+}
+
+t03() {  # a GPU job on the gpu partition sees the P2000 through --gres
+    local out; out=$(as_user alice srun --partition=gpu --gres=gpu:1 --time=2:00 \
+                     nvidia-smi -L 2>&1)
+    echo "$out"
+    grep -qi 'P2000' <<<"$out"
+}
+
+t04() {  # the GPU smoke job runs a container under Apptainer on g1 and sees the
+         # P2000 from the node (GPU-in-container is a documented WSL limitation)
+    # build the container image once (cached in the shared volume)
+    hd bash -c '[ -f /shared/images/cuda.sif ]' 2>/dev/null || make images >/dev/null 2>&1
+    # the repo is not inside the containers, so feed the job script over stdin
+    local job; job=$(as_user alice sbatch --parsable < containers/jobs/gpu_smoke.sbatch 2>/dev/null) \
+        || { echo "submit failed"; return 1; }
+    echo "job $job"
+    wait_state "$job" '^COMPLETED$' 300 || return 1
+    local out; out=$(as_user alice cat "/shared/home/alice/gpu_smoke.$job.out" 2>/dev/null)
+    echo "$out" | tail -4
+    # the P2000 shows on the node, and a container ran under Apptainer
+    grep -qi 'P2000' <<<"$out" && grep -qi 'PRETTY_NAME' <<<"$out"
 }
 
 t02() {  # a job submitted by alice completes with the right account and partition
@@ -94,8 +118,10 @@ t14() {  # the IO benchmark runs end to end at a small size and writes a valid C
     head -1 /tmp/fio_ci.csv | grep -q '^fs,test,jobs,trial,metric,value' && [ "$rows" -gt 1 ]
 }
 
-check "01 sinfo: c1,c2 idle in cpu, c1 in debug"        t01
+check "01 sinfo: c1,c2 in cpu, c1 in debug, g1 in gpu"    t01
 check "02 sbatch as alice completes with account/partition" t02
+check "03 srun --gres=gpu:1 nvidia-smi shows the P2000"   t03
+check "04 Apptainer GPU smoke job prints the GPU on g1"   t04
 check "05 /shared has the same inode on head, c1 and c2"  t05
 check "08 --qos=debug --time=2:00:00 is rejected"         t08
 check "09 fifth job on QoS normal pends (MaxJobsPerUser)"  t09

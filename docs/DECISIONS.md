@@ -110,3 +110,43 @@ server-side caching, which is stated in `bench/README.md` rather than hidden. Th
 small-file experiment (`bench/io/smallfiles.sh`) is the one that matters for AI
 datasets: it shows the metadata cost of many tiny files on a shared file system
 versus a few tar shards.
+
+## 2026-09-19
+
+**D16. One GPU node, g1, with the P2000 as a Slurm generic resource.**
+The NVIDIA container runtime passes the host GPU into the g1 container (compose
+`reservations.devices`), and `nvidia-smi` inside g1 sees the P2000. On WSL2 the
+GPU device is `/dev/dxg`, not `/dev/nvidia0` as on a bare-metal driver, so
+`gres.conf` on g1 points `File` at `/dev/dxg` (slurmd refuses to start if the
+device file does not exist). `slurm.conf` declares `NodeName=g1 Gres=gpu:p2000:1`
+and a `gpu` partition, and `GresTypes=gpu` turns the tracking on. A job asks for
+the GPU with `--gres=gpu:1`. The `slurm_compute` role installs `gres.conf` only
+on nodes in the `gpu` inventory group, so only g1 gets it. This WSL GPU path is
+one of the emulation seams, noted in the README.
+
+**D17. Job containers run under Apptainer, built into the node image.**
+Apptainer is installed from its PPA in the image, so the setuid components are
+present and a job (running as an ordinary user) can `apptainer exec`. GPU jobs
+run `apptainer exec --nv`, which injects the driver at run time; the container
+image itself carries no driver. `make images` builds `containers/cuda.def` into
+`/shared/images/cuda.sif` once, and `containers/jobs/gpu_smoke.sbatch` runs it on
+the gpu partition to prove the GPU reaches a container.
+
+**D18. `ConstrainDevices=no`: the GPU is scheduled, not cgroup-isolated.**
+With one GPU and one GPU node, Slurm's GRES scheduling is enough to hand the GPU
+to one job at a time. Restricting `/dev/nvidia*` with the cgroup device
+controller (`ConstrainDevices=yes`) is fiddly inside a container and buys nothing
+here, so it is left off. On a multi-GPU node it would matter; noted as a
+limitation.
+
+**D19. The GPU works on the node but not inside an Apptainer container, on WSL.**
+`nvidia-smi` and CUDA work in a job on g1 (test 03), because WSL exposes the GPU
+through `/dev/dxg` and the driver libraries under `/usr/lib/wsl`. They do not work
+inside an `apptainer exec` container: the libraries were bound in and put on
+`LD_LIBRARY_PATH`, but NVML still fails with "N/A" because the WSL GPU stack does
+not bridge into the container's namespace the way a bare-metal `/dev/nvidia0`
+does. This is a property of WSL2, not of the cluster: on a real Linux host,
+`apptainer exec --nv` passes the GPU straight in. So `gpu_smoke.sbatch` shows the
+GPU on the node and a container running under Apptainer, and does not pretend the
+GPU is inside the container. A GPU training job therefore runs directly on g1
+(next), not wrapped in Apptainer. Stated in the "real and emulated" table.

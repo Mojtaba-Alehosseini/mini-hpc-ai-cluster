@@ -1,0 +1,11 @@
+# A minimal CUDA container for the GPU smoke test. Built once into
+# /shared/images/cuda.sif by "make images". The NVIDIA container runtime and
+# apptainer --nv inject the driver at run time, so the image needs no driver.
+Bootstrap: docker
+From: nvidia/cuda:12.6.3-base-ubuntu22.04
+
+%runscript
+    exec nvidia-smi "$@"
+
+%labels
+    Purpose  GPU smoke test for mini-hpc-ai-cluster

@@ -101,6 +101,40 @@ services:
         condition: service_started
     networks: [cluster]
 
+  g1:
+    image: minihpc/node:23.11
+    hostname: g1
+    restart: unless-stopped
+    environment:
+      NODE_ROLE: compute
+      # inject nvidia-smi and the compute libraries into the container.
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    # privileged + seccomp unconfined: slurmd cgroups, NFS mount, and Apptainer
+    # (which needs unprivileged user namespaces) inside the container.
+    privileged: true
+    security_opt:
+      - seccomp=unconfined
+    cpuset: "4,5"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          # the Quadro P2000, passed in by the NVIDIA container runtime; it
+          # appears as /dev/nvidia0, which gres.conf points at.
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    depends_on:
+      head:
+        condition: service_started
+      nfs:
+        condition: service_started
+    networks: [cluster]
+
 volumes:
   dbdata:
   # backing store for the NFS export, mounted at /exports on the nfs node.

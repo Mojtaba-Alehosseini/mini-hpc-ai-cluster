@@ -1,7 +1,7 @@
 COMPOSE ?= docker compose
 PLAYBOOK ?= ansible-playbook
 
-.PHONY: up down reset check build logs ps configure idempotent bench
+.PHONY: up down reset check build logs ps configure idempotent bench images
 
 ## up: build and start the containers, then configure them with Ansible
 up: secrets/munge.key
@@ -29,6 +29,12 @@ check:
 bench:
 	SIZE=$(SIZE) TRIALS=$(TRIALS) ./bench/io/run.sh bench/results/fio.csv
 	NFILES=$(NFILES) TRIALS=$(TRIALS) ./bench/io/smallfiles_run.sh bench/results/smallfiles.csv
+
+## images: build the container images (Apptainer .sif) on the GPU node, into /shared
+images:
+	$(COMPOSE) exec -T g1 mkdir -p /shared/images
+	docker cp containers/cuda.def minihpc-g1-1:/tmp/cuda.def
+	$(COMPOSE) exec -T g1 apptainer build --force /shared/images/cuda.sif /tmp/cuda.def
 
 SIZE ?= 512m
 NFILES ?= 20000

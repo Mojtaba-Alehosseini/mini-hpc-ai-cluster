@@ -22,6 +22,16 @@
     mode: "0644"
   notify: restart slurmd
 
+- name: Install gres.conf on GPU nodes
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../slurm/gres.conf"
+    dest: /etc/slurm/gres.conf
+    owner: slurm
+    group: slurm
+    mode: "0644"
+  when: inventory_hostname in groups['gpu']
+  notify: restart slurmd
+
 - name: Apply any restart now
   ansible.builtin.meta: flush_handlers
 
