@@ -1,0 +1,18 @@
+---
+# Directories and ownership every node needs before a Slurm daemon starts.
+# Packages and the time zone are baked into the image, so there is nothing to
+# install here; container DNS resolves head, c1 and c2, so no /etc/hosts either.
+
+- name: Slurm spool, log and run directories exist
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.owner }}"
+    mode: "0755"
+  loop:
+    - { path: /var/spool/slurmctld, owner: slurm }
+    - { path: /var/spool/slurmd,    owner: root }
+    - { path: /var/log/slurm,       owner: slurm }
+    - { path: /run/slurm,           owner: slurm }
+    - { path: /etc/slurm,           owner: root }

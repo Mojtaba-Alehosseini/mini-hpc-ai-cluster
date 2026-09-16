@@ -1,0 +1,32 @@
+---
+# slurmdbd on the head node, talking to the MariaDB container. slurmdbd creates
+# its own schema on first start, so there is no SQL to run here.
+
+- name: Wait for the accounting database to accept connections
+  ansible.builtin.wait_for:
+    host: db
+    port: 3306
+    timeout: 120
+
+- name: Install slurmdbd.conf
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../slurm/slurmdbd.conf"
+    dest: /etc/slurm/slurmdbd.conf
+    owner: slurm
+    group: slurm
+    mode: "0600"
+  notify: restart slurmdbd
+
+- name: slurmdbd is running
+  ansible.builtin.command: supervisorctl start slurmdbd
+  register: dbd_start
+  changed_when: "'started' in dbd_start.stdout and 'already' not in dbd_start.stdout"
+  failed_when: >
+    dbd_start.rc != 0 and
+    'already started' not in dbd_start.stdout
+
+- name: Wait for slurmdbd to answer
+  ansible.builtin.wait_for:
+    host: head
+    port: 6819
+    timeout: 60

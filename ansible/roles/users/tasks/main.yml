@@ -1,0 +1,51 @@
+---
+# Cluster users. The account (same UID and GID on every node) is created on all
+# nodes so Slurm can run a step as that user anywhere. The home directory lives
+# on the shared file system, so it is created once and appears on every node.
+
+- name: Lab groups exist on every node
+  ansible.builtin.group:
+    name: "{{ item.name }}"
+    gid: "{{ item.gid }}"
+  loop:
+    - { name: lab-a, gid: 2000 }
+    - { name: lab-b, gid: 2001 }
+
+- name: Users exist on every node with a fixed UID
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    uid: "{{ item.uid }}"
+    group: "{{ item.group }}"
+    home: "/shared/home/{{ item.name }}"
+    create_home: false
+    shell: /bin/bash
+  loop:
+    - { name: alice, uid: 2001, group: lab-a }
+    - { name: bob,   uid: 2002, group: lab-a }
+    - { name: carol, uid: 2003, group: lab-b }
+
+- name: Shared directories exist (created once, on the head node)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "1777"
+  loop:
+    - /shared/data
+    - /shared/ckpt
+    - /shared/images
+  run_once: true
+  delegate_to: headnode
+
+- name: Home directories on the shared file system (created once, on head)
+  ansible.builtin.file:
+    path: "/shared/home/{{ item.name }}"
+    state: directory
+    owner: "{{ item.name }}"
+    group: "{{ item.group }}"
+    mode: "0755"
+  loop:
+    - { name: alice, group: lab-a }
+    - { name: bob,   group: lab-a }
+    - { name: carol, group: lab-b }
+  run_once: true
+  delegate_to: headnode

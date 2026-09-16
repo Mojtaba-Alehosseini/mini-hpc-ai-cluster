@@ -1,0 +1,4 @@
+---
+- name: restart slurmd
+  ansible.builtin.command: supervisorctl restart slurmd
+  changed_when: true

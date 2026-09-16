@@ -1,0 +1,30 @@
+---
+# One playbook configures the whole cluster. Run from the ansible/ directory,
+# or with -i ansible/inventory.ini from the repository root. Each role is
+# idempotent, so a second run (or --check) reports no change.
+
+- name: Base configuration on every node
+  hosts: cluster
+  gather_facts: false
+  roles:
+    - common
+    - munge
+
+- name: Users and shared home directories
+  hosts: cluster
+  gather_facts: false
+  roles:
+    - users
+
+- name: Accounting database and controller
+  hosts: head
+  gather_facts: false
+  roles:
+    - slurm_db
+    - slurm_head
+
+- name: Compute nodes
+  hosts: compute
+  gather_facts: false
+  roles:
+    - slurm_compute

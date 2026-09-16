@@ -1,0 +1,30 @@
+---
+# Distribute the one munge key to every node. The key is generated once on the
+# host by "make up" (secrets/munge.key) and is never committed. munged runs
+# under supervisord with autostart off, so it is started here once the key is in
+# place, and restarted whenever the key changes.
+
+- name: munge run directory exists
+  ansible.builtin.file:
+    path: /run/munge
+    state: directory
+    owner: munge
+    group: munge
+    mode: "0755"
+
+- name: Install the munge key
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../secrets/munge.key"
+    dest: /etc/munge/munge.key
+    owner: munge
+    group: munge
+    mode: "0400"
+  notify: restart munged
+
+- name: munged is running
+  ansible.builtin.command: supervisorctl start munged
+  register: munge_start
+  changed_when: "'started' in munge_start.stdout and 'already' not in munge_start.stdout"
+  failed_when: >
+    munge_start.rc != 0 and
+    'already started' not in munge_start.stdout

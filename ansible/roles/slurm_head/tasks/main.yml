@@ -1,0 +1,58 @@
+---
+# The controller: slurm.conf, cgroup.conf, slurmctld, and the accounting
+# objects (accounts, users, fair share, QoS). slurmctld runs under supervisord
+# with autostart off and is started here once its configuration is in place.
+
+- name: Install slurm.conf
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../slurm/slurm.conf"
+    dest: /etc/slurm/slurm.conf
+    owner: slurm
+    group: slurm
+    mode: "0644"
+  notify: restart slurmctld
+
+- name: Install cgroup.conf
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../slurm/cgroup.conf"
+    dest: /etc/slurm/cgroup.conf
+    owner: slurm
+    group: slurm
+    mode: "0644"
+  notify: restart slurmctld
+
+# Apply any restart now, so the controller is up before we create accounts.
+- name: Apply controller restart before configuring accounting
+  ansible.builtin.meta: flush_handlers
+
+- name: slurmctld is running
+  ansible.builtin.command: supervisorctl start slurmctld
+  register: ctld_start
+  changed_when: "'started' in ctld_start.stdout and 'already' not in ctld_start.stdout"
+  failed_when: >
+    ctld_start.rc != 0 and
+    'already started' not in ctld_start.stdout
+
+- name: Wait for the controller to answer
+  ansible.builtin.command: scontrol ping
+  register: ping
+  until: "'is UP' in ping.stdout"
+  retries: 20
+  delay: 3
+  changed_when: false
+  # read-only check, so run it in --check mode too; otherwise the retry loop
+  # has no output to test and the task errors during the idempotency check
+  check_mode: false
+
+- name: Install the accounting bootstrap script
+  ansible.builtin.copy:
+    src: accounting.sh
+    dest: /usr/local/sbin/accounting.sh
+    mode: "0755"
+
+# Idempotent: sacctmgr "add" of an existing object is a no-op and "modify" sets
+# the same values, so this never really changes state after the first run.
+- name: Create accounts, users, fair share and QoS
+  ansible.builtin.command: bash /usr/local/sbin/accounting.sh
+  register: acct
+  changed_when: false
