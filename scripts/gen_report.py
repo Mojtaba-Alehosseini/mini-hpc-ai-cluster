@@ -2,7 +2,8 @@
 """Generate docs/report.md from the benchmark CSVs. Every table in the report
 comes from this script reading bench/results/, so the report cannot drift from
 the data. Run: python scripts/gen_report.py
-Optional inputs it uses if present: bench/results/sched.csv (scheduler latency).
+Inputs it uses if present: fio.csv, smallfiles.csv, train.csv, ior_mdtest.csv,
+hpc_patterns_cluster.csv.
 """
 import csv
 import statistics as st
@@ -65,8 +66,84 @@ def train_table():
     return "\n".join(out)
 
 
+def ior_tables():
+    r = rows("ior_mdtest.csv")
+    if not r:
+        return None
+
+    def val(fs, tool, metric):
+        for x in r:
+            if x["fs"] == fs and x["tool"] == tool and x["metric"] == metric:
+                return float(x["value"])
+        return float("nan")
+
+    lw, sw = val("local", "ior", "write"), val("shared", "ior", "write")
+    lr, sr = val("local", "ior", "read"), val("shared", "ior", "read")
+    bw = ["| Metric | /local | /shared (NFS) | ratio |", "|---|---|---|---|",
+          f"| write, O_DIRECT, MiB/s | {lw:g} | {sw:g} | {round(lw/sw,1):g}x slower on NFS |",
+          f"| read, buffered, MiB/s | {lr:g} | {sr:g} | cache-served |"]
+    md = ["| Operation | /local | /shared (NFS) | ratio |", "|---|---|---|---|"]
+    for op, label in (("create", "create"), ("stat", "stat"), ("removal", "remove")):
+        lo, so = val("local", "mdtest", op), val("shared", "mdtest", op)
+        note = "cache-served" if op == "stat" else f"{round(lo/so):g}x slower on NFS"
+        md.append(f"| {label}, ops/s | {lo:g} | {so:g} | {note} |")
+    return "\n".join(bw), "\n".join(md)
+
+
+def hpc_patterns_summary():
+    r = rows("hpc_patterns_cluster.csv")
+    if not r:
+        return None
+    kernels = sorted({x["algo"] for x in r})
+    variants = sorted({x["variant"].split("-")[0] for x in r})
+    n = len(r)
+    all_ok = all(x.get("check_ok") == "1" for x in r)
+    return kernels, variants, n, all_ok
+
+
 sf_table, shard_ratio = smallfiles_table()
 tt = train_table()
+ior = ior_tables()
+hp = hpc_patterns_summary()
+
+ior_section = ""
+if ior:
+    ior_bw, ior_md = ior
+    ior_section = f"""## IO benchmarks: IOR and mdtest
+
+IOR and mdtest, the standard HPC IO benchmarks, built from source and run on a
+compute node against `/shared` and `/local`. Bandwidth first (IOR, POSIX, two
+tasks); the write uses O_DIRECT so it is not absorbed by the page cache, while
+the read is buffered and therefore served from cache.
+
+{ior_bw}
+
+Then metadata (mdtest) — the rate for creating, stat-ing and removing many small
+files.
+
+{ior_md}
+
+Metadata is where the network file system hurts most: each create or remove is a
+synchronous round trip to the server, hundreds to nearly two thousand times
+slower than local disk. Stat is fast on both because the entries are cached. It
+is the same lesson as the small-file experiment above, from a standard tool.
+
+"""
+
+hp_section = ""
+if hp:
+    kernels, variants, n, all_ok = hp
+    ok = " (every run `check_ok=1`)" if all_ok else ""
+    hp_section = f"""## Real workloads: hpc-patterns on the cluster
+
+The external `hpc-patterns` suite — {len(kernels)} kernels ({', '.join(kernels)}) —
+built in a node container and run through Slurm across the {', '.join(variants)}
+paradigms, the MPI jobs on four ranks over both compute nodes. {n} runs in total,
+all passing their correctness check{ok}, including a million-unknown
+conjugate-gradient solve. Full data in `bench/results/hpc_patterns_cluster.csv`;
+the write-up is `docs/hpc-on-the-cluster.md`.
+
+"""
 
 doc = f"""# Report: mini-hpc-ai-cluster
 
@@ -110,7 +187,7 @@ the loose files is roughly ten times slower on NFS than on a local disk because
 every file is a metadata round trip to the server. This is why data loaders use
 `webdataset`, tar shards or record files.
 
-## Scheduler behaviour
+{ior_section}## Scheduler behaviour
 
 Shown by the acceptance tests and the runbook, with real output in
 `runbook/RUNBOOK.md`:
@@ -133,13 +210,13 @@ job on g1 (`nvidia-smi -L` shows it). {"A short training run:" if tt else "A tra
 if tt:
     doc += "\n" + tt + "\n"
 
-doc += """
-## Monitoring
+doc += "\n" + hp_section + """## Monitoring
 
 Prometheus scrapes node, Slurm and GPU exporters; Grafana shows the Cluster, GPU
 node and Storage dashboards; five alert rules fire on real conditions and each
 has a promtool unit test. The `IdleGPUAllocation` alert catches the most common
-GPU waste: a job holding the GPU at under 10% utilisation.
+GPU waste: a job holding the GPU at under 10% utilisation. Screenshots of the
+three dashboards under load are in `docs/hpc-on-the-cluster.md`.
 
 ## Limitations
 

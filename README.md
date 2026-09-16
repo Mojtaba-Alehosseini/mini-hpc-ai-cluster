@@ -154,12 +154,12 @@ running low — and every rule has a promtool unit test in
 [`monitoring/prometheus/alerts.test.yml`](monitoring/prometheus/alerts.test.yml) that runs
 in CI.
 
-The dashboards during a live run — the cluster scheduling MPI jobs, the GPU node
-under a training job, and the shared storage moving data:
+The three dashboards during a live run — the cluster scheduling MPI jobs, the GPU
+node under a training job (utilisation ramping to ~95 %), and shared storage
+moving data. Full-size stills are in
+[`docs/hpc-on-the-cluster.md`](docs/hpc-on-the-cluster.md).
 
-![Cluster dashboard](docs/figs/dashboard-cluster.jpg)
-![GPU node dashboard](docs/figs/dashboard-gpu.jpg)
-![Storage dashboard](docs/figs/dashboard-storage.jpg)
+![Grafana dashboards under load](docs/figs/dashboards.gif)
 
 ## Repository layout
 

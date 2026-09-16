@@ -51,6 +51,32 @@ the loose files is roughly ten times slower on NFS than on a local disk because
 every file is a metadata round trip to the server. This is why data loaders use
 `webdataset`, tar shards or record files.
 
+## IO benchmarks: IOR and mdtest
+
+IOR and mdtest, the standard HPC IO benchmarks, built from source and run on a
+compute node against `/shared` and `/local`. Bandwidth first (IOR, POSIX, two
+tasks); the write uses O_DIRECT so it is not absorbed by the page cache, while
+the read is buffered and therefore served from cache.
+
+| Metric | /local | /shared (NFS) | ratio |
+|---|---|---|---|
+| write, O_DIRECT, MiB/s | 268.8 | 92.82 | 2.9x slower on NFS |
+| read, buffered, MiB/s | 4891 | 9936 | cache-served |
+
+Then metadata (mdtest) — the rate for creating, stat-ing and removing many small
+files.
+
+| Operation | /local | /shared (NFS) | ratio |
+|---|---|---|---|
+| create, ops/s | 31762 | 102.024 | 311x slower on NFS |
+| stat, ops/s | 441003 | 507171 | cache-served |
+| remove, ops/s | 183511 | 97.049 | 1891x slower on NFS |
+
+Metadata is where the network file system hurts most: each create or remove is a
+synchronous round trip to the server, hundreds to nearly two thousand times
+slower than local disk. Stat is fast on both because the entries are cached. It
+is the same lesson as the small-file experiment above, from a standard tool.
+
 ## Scheduler behaviour
 
 Shown by the acceptance tests and the runbook, with real output in
@@ -74,12 +100,22 @@ job on g1 (`nvidia-smi -L` shows it). A short training run:
 |---|---|---|---|
 | cnn_train 300 steps batch 64 | Quadro P2000 (cuda) | 2289.2 | 161 |
 
+## Real workloads: hpc-patterns on the cluster
+
+The external `hpc-patterns` suite — 6 kernels (cg, fft, heat, ising, kmeans, lj) —
+built in a node container and run through Slurm across the mpi, openmp, serial
+paradigms, the MPI jobs on four ranks over both compute nodes. 24 runs in total,
+all passing their correctness check (every run `check_ok=1`), including a million-unknown
+conjugate-gradient solve. Full data in `bench/results/hpc_patterns_cluster.csv`;
+the write-up is `docs/hpc-on-the-cluster.md`.
+
 ## Monitoring
 
 Prometheus scrapes node, Slurm and GPU exporters; Grafana shows the Cluster, GPU
 node and Storage dashboards; five alert rules fire on real conditions and each
 has a promtool unit test. The `IdleGPUAllocation` alert catches the most common
-GPU waste: a job holding the GPU at under 10% utilisation.
+GPU waste: a job holding the GPU at under 10% utilisation. Screenshots of the
+three dashboards under load are in `docs/hpc-on-the-cluster.md`.
 
 ## Limitations
 
