@@ -1,0 +1,4 @@
+---
+- name: re-export
+  ansible.builtin.command: exportfs -ra
+  changed_when: true

@@ -1,7 +1,8 @@
 # mini-hpc-ai-cluster: one compose project, one bridge network.
-# Current shape: head (slurmctld, slurmdbd), db (MariaDB), c1, c2 (slurmd).
-# Ansible configures the nodes after they start (see ansible/ and the Makefile).
-# Node g1, the NFS server and the monitoring stack are added later.
+# Current shape: nfs (NFS server), db (MariaDB), head (slurmctld, slurmdbd),
+# c1, c2 (slurmd). Ansible configures the nodes and mounts /shared over NFS
+# after they start (see ansible/ and the Makefile). Node g1 and the monitoring
+# stack are added later.
 name: minihpc
 
 services:
@@ -25,18 +26,34 @@ services:
       retries: 40
     networks: [cluster]
 
-  head:
+  nfs:
     build: docker/node
+    image: minihpc/node:23.11
+    hostname: nfs
+    restart: unless-stopped
+    environment:
+      NODE_ROLE: nfs
+    # privileged: the kernel NFS server needs to load exports and serve rpc.
+    privileged: true
+    volumes:
+      # the export is on this named volume (real ext4); the kernel NFS server
+      # cannot export the container's overlay filesystem.
+      - shared:/exports
+    networks: [cluster]
+
+  head:
     image: minihpc/node:23.11
     hostname: head
     restart: unless-stopped
     environment:
       NODE_ROLE: head
-    volumes:
-      - shared:/shared
+    # privileged: mounts /shared over NFS.
+    privileged: true
     depends_on:
       db:
         condition: service_healthy
+      nfs:
+        condition: service_started
     networks: [cluster]
 
   c1:
@@ -45,7 +62,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ROLE: compute
-    # privileged: slurmd manages cgroups for job steps and mounts NFS.
+    # privileged: slurmd manages cgroups for job steps and mounts /shared over NFS.
     privileged: true
     cpuset: "0,1"
     deploy:
@@ -53,10 +70,10 @@ services:
         limits:
           cpus: "2"
           memory: 2G
-    volumes:
-      - shared:/shared
     depends_on:
       head:
+        condition: service_started
+      nfs:
         condition: service_started
     networks: [cluster]
 
@@ -73,17 +90,16 @@ services:
         limits:
           cpus: "2"
           memory: 2G
-    volumes:
-      - shared:/shared
     depends_on:
       head:
+        condition: service_started
+      nfs:
         condition: service_started
     networks: [cluster]
 
 volumes:
   dbdata:
-  # Shared storage starts as a Docker volume mounted on every node. The NFS
-  # server replaces it when the storage layer is built (docs/DECISIONS.md).
+  # backing store for the NFS export, mounted at /exports on the nfs node.
   shared:
 
 networks:

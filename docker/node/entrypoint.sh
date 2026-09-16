@@ -15,6 +15,21 @@ mkdir -p /run/munge /var/log/munge \
 chown munge:munge /run/munge /var/log/munge
 chown slurm:slurm /run/slurm /var/log/slurm /var/spool/slurmctld
 
+# NFS server node: the export lives on the Docker volume at /exports (a real
+# ext4, which the kernel NFS server can export; the container overlay cannot).
+# Mounting the nfsd control filesystem must happen in the init process; the
+# nfs_server role writes /etc/exports and starts the daemons.
+if [ "$role" = "nfs" ]; then
+    mkdir -p /exports/home /exports/data /exports/ckpt /exports/images
+    chmod 1777 /exports/data /exports/ckpt
+    mountpoint -q /proc/fs/nfsd || mount -t nfsd nfsd /proc/fs/nfsd 2>/dev/null || true
+fi
+
+# Every node that mounts /shared over NFS needs the mount point to exist.
+if [ "$role" = "head" ] || [ "$role" = "compute" ]; then
+    mkdir -p /shared
+fi
+
 # cgroup v2 for compute nodes. Docker starts this process at the root of the
 # container's cgroup namespace, which is a delegated cgroup. A cgroup that has
 # processes in it cannot hand controllers to child cgroups (the "no internal

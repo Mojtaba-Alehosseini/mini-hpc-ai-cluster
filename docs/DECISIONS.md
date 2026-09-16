@@ -75,3 +75,29 @@ Moving the container's init process into `init.scope` and enabling the cgroup v2
 controllers must happen in PID 1 at start, before any step runs. That is a
 container-runtime concern, so it lives in `entrypoint.sh`. Ansible owns cluster
 configuration, not the container's own cgroup bootstrap.
+
+## 2026-09-18
+
+**D12. Shared storage is a real kernel NFS server, exporting a Docker volume.**
+`/shared` is now one NFS export, not a per-node volume, so it is genuinely one
+file system: a file written on the head has the same inode on c1 and c2 (test
+05). The server is a container running the Linux kernel NFS server (`rpc.nfsd`,
+`rpc.mountd`), NFSv4 only. The one constraint that shaped the design: the kernel
+NFS server cannot export a container's overlay filesystem ("does not support NFS
+export"), so the export directory is a Docker named volume (`shared` at
+`/exports`), which is backed by real ext4. The `nfs_server` role loads the
+export and starts the daemons; the `nfs_client` role mounts `nfs:/` at `/shared`
+on every node. NFS-Ganesha (userspace) was the fallback if the kernel server had
+not worked; it did, and the kernel server is the one real sites run.
+
+**D13. The head and nfs nodes run privileged, like the compute nodes.**
+Mounting NFS inside a container needs `CAP_SYS_ADMIN`, and the kernel NFS server
+needs to load exports, so `head`, `nfs`, `c1` and `c2` are all privileged. On a
+single-host test cluster this is acceptable; a real deployment would narrow the
+capabilities. Stated in the "real and emulated" table.
+
+**D14. The NFS mount is re-made on every `make up`, not persisted.**
+An NFS mount inside a container does not survive a container restart, and there
+is no fstab boot mount. The `nfs_client` role mounts `/shared` when it is not
+already mounted, so `make up` restores it and a second run is a no-op. Same
+trade as D10: a clean, ordered bring-up over a boot-time mount.

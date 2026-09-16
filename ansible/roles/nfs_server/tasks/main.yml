@@ -1,0 +1,53 @@
+---
+# The NFS server. The export directory lives on a Docker volume (real ext4);
+# the kernel NFS server cannot export the container overlay. rpc.nfsd starts
+# kernel threads (a one-shot), so it is a command here rather than a supervised
+# process; rpcbind and rpc.mountd run under supervisord. NFSv4 only.
+
+- name: Export directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+  loop:
+    - /exports/home
+    - /exports/data
+    - /exports/ckpt
+    - /exports/images
+
+- name: The nfsd control filesystem is mounted
+  ansible.builtin.command: mount -t nfsd nfsd /proc/fs/nfsd
+  args:
+    creates: /proc/fs/nfsd/threads
+
+- name: Install /etc/exports
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../storage/exports"
+    dest: /etc/exports
+    mode: "0644"
+  notify: re-export
+
+- name: rpcbind is running
+  ansible.builtin.command: supervisorctl start rpcbind
+  register: rpcbind_start
+  changed_when: "'started' in rpcbind_start.stdout and 'already' not in rpcbind_start.stdout"
+  failed_when: rpcbind_start.rc != 0 and 'already started' not in rpcbind_start.stdout
+
+- name: Kernel NFS server threads are running (NFSv4 only)
+  ansible.builtin.command: rpc.nfsd --no-nfs-version 3 8
+  changed_when: false
+
+- name: Load the exports
+  ansible.builtin.command: exportfs -ra
+  changed_when: false
+
+- name: rpc.mountd is running
+  ansible.builtin.command: supervisorctl start mountd
+  register: mountd_start
+  changed_when: "'started' in mountd_start.stdout and 'already' not in mountd_start.stdout"
+  failed_when: mountd_start.rc != 0 and 'already started' not in mountd_start.stdout
+
+- name: Wait for NFS to listen on 2049
+  ansible.builtin.wait_for:
+    port: 2049
+    host: nfs
+    timeout: 30

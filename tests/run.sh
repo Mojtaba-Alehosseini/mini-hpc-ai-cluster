@@ -48,6 +48,18 @@ t02() {  # a job submitted by alice completes with the right account and partiti
     [ "$line" = "lab-a|cpu|COMPLETED|0:0" ]
 }
 
+t05() {  # /shared is the same file system on every node: a file written on head
+         # has the same inode on c1 and c2 (it is one NFS export, not per-node)
+    local f=/shared/home/alice/inode_probe.txt
+    hd bash -c "echo shared-fs-test > $f" || return 1
+    local i_head i_c1 i_c2
+    i_head=$(hd stat -c %i "$f")
+    i_c1=$(docker compose exec -T c1 stat -c %i "$f" 2>/dev/null)
+    i_c2=$(docker compose exec -T c2 stat -c %i "$f" 2>/dev/null)
+    echo "inode head=$i_head c1=$i_c1 c2=$i_c2"
+    [ -n "$i_head" ] && [ "$i_head" = "$i_c1" ] && [ "$i_c1" = "$i_c2" ]
+}
+
 t08() {  # a debug job asking for two hours is rejected at submission
     local out; out=$(as_user alice sbatch --qos=debug --partition=debug --time=2:00:00 --wrap=hostname 2>&1)
     echo "$out"
@@ -77,6 +89,7 @@ t13() {  # the Ansible playbook is idempotent: a second run in check mode
 
 check "01 sinfo: c1,c2 idle in cpu, c1 in debug"        t01
 check "02 sbatch as alice completes with account/partition" t02
+check "05 /shared has the same inode on head, c1 and c2"  t05
 check "08 --qos=debug --time=2:00:00 is rejected"         t08
 check "09 fifth job on QoS normal pends (MaxJobsPerUser)"  t09
 check "13 ansible site.yml --check reports no change"      t13

@@ -1,0 +1,5 @@
+# NFS exports for the mini cluster. One export: the volume-backed /exports as
+# the NFSv4 pseudo-root (fsid=0). Every node mounts nfs:/ at /shared, so
+# /shared/home is /exports/home on the server. no_root_squash so root on a node
+# (slurmd) can manage files; sync for correctness over speed on this testbed.
+/exports *(rw,sync,no_subtree_check,no_root_squash,fsid=0,crossmnt)

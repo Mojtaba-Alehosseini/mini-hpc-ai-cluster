@@ -1,0 +1,30 @@
+---
+# Mount the shared file system over NFSv4 on the head and compute nodes. A hard
+# mount is used, the same as a real cluster, so a job blocks rather than sees a
+# short read if the server hiccups. The mount does not persist across a
+# container restart, so it is re-made on every "make up" (idempotent: skipped
+# when already mounted).
+
+- name: /shared mount point exists
+  ansible.builtin.file:
+    path: /shared
+    state: directory
+
+- name: Wait for the NFS server to listen
+  ansible.builtin.wait_for:
+    host: nfs
+    port: 2049
+    timeout: 30
+
+- name: Is /shared already mounted?
+  ansible.builtin.command: mountpoint -q /shared
+  register: shared_mp
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Mount /shared over NFSv4
+  ansible.builtin.command:
+    cmd: mount -t nfs4 -o vers=4.1,hard,timeo=50,retrans=3 nfs:/ /shared
+  when: shared_mp.rc != 0
+  changed_when: true

@@ -11,7 +11,8 @@ ENV DEBIAN_FRONTEND=noninteractive TZ=Europe/Rome
 RUN apt-get update && apt-get install -y --no-install-recommends \
         slurm-wlm slurmdbd slurm-wlm-basic-plugins munge supervisor \
         mariadb-client openmpi-bin libopenmpi-dev build-essential git \
-        fio nfs-common python3 python3-venv python3-pip \
+        fio nfs-common nfs-kernel-server rpcbind \
+        python3 python3-venv python3-pip \
         curl ca-certificates iproute2 iputils-ping procps less vim-tiny sudo tzdata \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/share/zoneinfo/$TZ /etc/localtime

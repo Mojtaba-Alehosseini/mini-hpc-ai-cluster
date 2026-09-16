@@ -3,12 +3,24 @@
 # or with -i ansible/inventory.ini from the repository root. Each role is
 # idempotent, so a second run (or --check) reports no change.
 
+- name: NFS server
+  hosts: nfs
+  gather_facts: false
+  roles:
+    - nfs_server
+
 - name: Base configuration on every node
   hosts: cluster
   gather_facts: false
   roles:
     - common
     - munge
+
+- name: Mount the shared file system
+  hosts: cluster
+  gather_facts: false
+  roles:
+    - nfs_client
 
 - name: Users and shared home directories
   hosts: cluster
