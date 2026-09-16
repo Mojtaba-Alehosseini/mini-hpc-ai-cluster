@@ -1,0 +1,91 @@
+# mini-hpc-ai-cluster: one compose project, one bridge network.
+# Current shape: head (slurmctld, slurmdbd), db (MariaDB), c1, c2 (slurmd).
+# Ansible configures the nodes after they start (see ansible/ and the Makefile).
+# Node g1, the NFS server and the monitoring stack are added later.
+name: minihpc
+
+services:
+  db:
+    image: mariadb:10.11
+    hostname: db
+    restart: unless-stopped
+    environment:
+      # Throwaway passwords for a local test database. They protect nothing.
+      MARIADB_ROOT_PASSWORD: root-throwaway
+      MARIADB_DATABASE: slurm_acct_db
+      MARIADB_USER: slurm
+      MARIADB_PASSWORD: slurm-throwaway
+    command: --innodb-buffer-pool-size=1G --innodb-lock-wait-timeout=900 --innodb-log-file-size=64M
+    volumes:
+      - dbdata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+    networks: [cluster]
+
+  head:
+    build: docker/node
+    image: minihpc/node:23.11
+    hostname: head
+    restart: unless-stopped
+    environment:
+      NODE_ROLE: head
+    volumes:
+      - shared:/shared
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [cluster]
+
+  c1:
+    image: minihpc/node:23.11
+    hostname: c1
+    restart: unless-stopped
+    environment:
+      NODE_ROLE: compute
+    # privileged: slurmd manages cgroups for job steps and mounts NFS.
+    privileged: true
+    cpuset: "0,1"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+    volumes:
+      - shared:/shared
+    depends_on:
+      head:
+        condition: service_started
+    networks: [cluster]
+
+  c2:
+    image: minihpc/node:23.11
+    hostname: c2
+    restart: unless-stopped
+    environment:
+      NODE_ROLE: compute
+    privileged: true
+    cpuset: "2,3"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+    volumes:
+      - shared:/shared
+    depends_on:
+      head:
+        condition: service_started
+    networks: [cluster]
+
+volumes:
+  dbdata:
+  # Shared storage starts as a Docker volume mounted on every node. The NFS
+  # server replaces it when the storage layer is built (docs/DECISIONS.md).
+  shared:
+
+networks:
+  cluster:
+    name: cluster

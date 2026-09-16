@@ -1,0 +1,9 @@
+# generated at "make up"; never committed
+secrets/
+.up_started
+# container images and scratch data
+*.sif
+bench/**/tmp/
+__pycache__/
+.venv/
+*.pyc
