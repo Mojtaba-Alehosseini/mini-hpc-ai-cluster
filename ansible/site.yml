@@ -40,3 +40,9 @@
   gather_facts: false
   roles:
     - slurm_compute
+
+- name: Metrics exporters
+  hosts: head:compute:nfs
+  gather_facts: false
+  roles:
+    - monitoring

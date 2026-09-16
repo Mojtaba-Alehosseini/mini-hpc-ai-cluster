@@ -150,3 +150,30 @@ does. This is a property of WSL2, not of the cluster: on a real Linux host,
 GPU on the node and a container running under Apptainer, and does not pretend the
 GPU is inside the container. A GPU training job therefore runs directly on g1
 (next), not wrapped in Apptainer. Stated in the "real and emulated" table.
+
+## 2026-09-20
+
+**D20. Monitoring: Prometheus and Grafana as appliances, exporters in the nodes.**
+Prometheus and Grafana run as their own compose services with their config
+bind-mounted from `monitoring/` (they are appliances with no Python for the
+Ansible connection, like the MariaDB service, so this is consistent with D9
+rather than an exception to it). The exporters run inside the node containers
+under supervisord and are started by an Ansible `monitoring` role:
+`prometheus-node-exporter` on every node, a small Slurm exporter on the head, and
+a GPU exporter on g1. Grafana provisions its datasource and three dashboards
+(Cluster, GPU node, Storage) from files; the datasource uid is fixed to
+`prometheus` so the dashboards reference it deterministically.
+
+**D21. The GPU exporter reads `nvidia-smi`, not pynvml, and tolerates `[N/A]`.**
+On WSL the GPU is reached through `/dev/dxg`; `nvidia-smi` handles that where a
+bare pynvml load is fragile, so the exporter parses `nvidia-smi --query-gpu`. The
+P2000 reports `power.draw` as `[N/A]` on WSL, so the parser maps any non-numeric
+field to 0 instead of crashing the scrape.
+
+**D22. Five alert rules, each with a promtool unit test (test 12).**
+`NodeDown`, `SlurmNodeUnavailable`, `IdleGPUAllocation`, `QueueStuck` and
+`SharedStorageLow`. The plan's fifth alert was NFS RPC p99 latency, which needs
+node-exporter's mountstats collector and does not unit-test cleanly;
+`SharedStorageLow` (the export nearly full) is the more actionable signal and maps
+to a runbook incident, so it stands in. Alertmanager is not run: the rules firing
+in Prometheus at `/alerts` is enough here, as the plan allows.

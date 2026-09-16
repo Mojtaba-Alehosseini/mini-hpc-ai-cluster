@@ -1,0 +1,88 @@
+# Unit tests for the alert rules. Run with:
+#   promtool test rules alerts.test.yml
+# Each test feeds synthetic series and asserts the alert fires at the right time.
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: NodeDown fires when a node-exporter target is down
+    interval: 1m
+    input_series:
+      - series: 'up{job="node",instance="c1:9100"}'
+        values: "0x5"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: NodeDown
+        exp_alerts:
+          - exp_labels: {severity: critical, job: node, instance: "c1:9100"}
+            exp_annotations:
+              summary: "node c1:9100 is down"
+              description: "node-exporter on c1:9100 has not answered for 2 minutes."
+
+  - name: SlurmNodeUnavailable fires on a drained node
+    interval: 1m
+    input_series:
+      - series: 'slurm_nodes{state="drain"}'
+        values: "1x8"
+      - series: 'slurm_nodes{state="down"}'
+        values: "0x8"
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: SlurmNodeUnavailable
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: "a Slurm node is drained or down"
+              description: "1 node(s) are in drain or down state for over 5 minutes."
+
+  - name: IdleGPUAllocation fires when a GPU job runs at low utilisation
+    interval: 1m
+    input_series:
+      - series: 'slurm_gpu_jobs_running'
+        values: "1x12"
+      - series: 'gpu_utilization_percent{gpu="0"}'
+        values: "3x12"
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: IdleGPUAllocation
+        exp_alerts:
+          - exp_labels: {severity: warning, gpu: "0"}
+            exp_annotations:
+              summary: "GPU job running but the GPU is idle"
+              description: "A job holds the GPU while utilisation is under 10% for 10 minutes (often num_workers=0)."
+
+  - name: QueueStuck fires when jobs pend while a node is idle
+    interval: 1m
+    input_series:
+      - series: 'slurm_jobs{state="pending"}'
+        values: "3x16"
+      - series: 'slurm_jobs{state="running"}'
+        values: "0x16"
+      - series: 'slurm_nodes{state="idle"}'
+        values: "2x16"
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: QueueStuck
+        exp_alerts:
+          - exp_labels: {severity: warning, state: "pending"}
+            exp_annotations:
+              summary: "jobs pending while nodes are idle"
+              description: "Pending jobs are not starting although idle nodes exist, for 15 minutes."
+
+  - name: SharedStorageLow fires when the export is nearly full
+    interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{mountpoint="/exports"}'
+        values: "5x8"
+      - series: 'node_filesystem_size_bytes{mountpoint="/exports"}'
+        values: "100x8"
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: SharedStorageLow
+        exp_alerts:
+          - exp_labels: {severity: warning, mountpoint: "/exports"}
+            exp_annotations:
+              summary: "shared storage is nearly full"
+              description: "The /shared backing store has under 10% free for 5 minutes; checkpoints will fail."

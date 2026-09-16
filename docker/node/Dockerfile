@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         mariadb-client openmpi-bin libopenmpi-dev build-essential git \
         fio nfs-common nfs-kernel-server rpcbind \
         python3 python3-venv python3-pip \
+        prometheus-node-exporter python3-prometheus-client \
         software-properties-common gnupg \
         curl ca-certificates iproute2 iputils-ping procps less vim-tiny sudo tzdata \
     && rm -rf /var/lib/apt/lists/* \

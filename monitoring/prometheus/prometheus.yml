@@ -1,0 +1,27 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # node-exporter runs inside every node container on :9100
+  - job_name: node
+    static_configs:
+      - targets: ["head:9100", "c1:9100", "c2:9100", "g1:9100", "nfs:9100"]
+        labels: {tier: cluster}
+
+  # the Slurm exporter runs on the head node
+  - job_name: slurm
+    static_configs:
+      - targets: ["head:9200"]
+
+  # the GPU exporter runs on g1
+  - job_name: gpu
+    static_configs:
+      - targets: ["g1:9400"]

@@ -1,0 +1,40 @@
+---
+# Exporters on the nodes. node-exporter runs everywhere; the slurm exporter on
+# the head; the GPU exporter on g1. Prometheus and Grafana are separate compose
+# services that scrape these. The exporters are read-only observers, so unlike
+# the Slurm daemons they may report "changed" only when newly started.
+
+- name: Exporter directory exists
+  ansible.builtin.file:
+    path: /opt/exporters
+    state: directory
+    mode: "0755"
+
+- name: Install the exporter scripts
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../monitoring/exporters/{{ item }}"
+    dest: "/opt/exporters/{{ item }}"
+    mode: "0755"
+  loop:
+    - slurm_exporter.py
+    - gpu_exporter.py
+
+- name: node-exporter is running
+  ansible.builtin.command: supervisorctl start node-exporter
+  register: ne
+  changed_when: "'started' in ne.stdout and 'already' not in ne.stdout"
+  failed_when: ne.rc != 0 and 'already started' not in ne.stdout
+
+- name: slurm exporter is running (head only)
+  ansible.builtin.command: supervisorctl start slurm-exporter
+  register: se
+  changed_when: "'started' in se.stdout and 'already' not in se.stdout"
+  failed_when: se.rc != 0 and 'already started' not in se.stdout
+  when: inventory_hostname in groups['head']
+
+- name: gpu exporter is running (gpu nodes only)
+  ansible.builtin.command: supervisorctl start gpu-exporter
+  register: ge
+  changed_when: "'started' in ge.stdout and 'already' not in ge.stdout"
+  failed_when: ge.rc != 0 and 'already started' not in ge.stdout
+  when: inventory_hostname in groups['gpu']

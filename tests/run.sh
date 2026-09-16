@@ -111,6 +111,26 @@ t13() {  # the Ansible playbook is idempotent: a second run in check mode
     ! echo "$out" | grep -qE 'changed=[1-9]|failed=[1-9]|unreachable=[1-9]'
 }
 
+pt() { docker compose exec -T prometheus promtool "$@"; }
+
+t12() {  # every Prometheus target is up, and the alert rules pass their unit tests
+    # unit tests for the alert rules (alerts.test.yml is in the mounted config dir)
+    if ! pt test rules /etc/prometheus/alerts.test.yml >/tmp/pt.out 2>&1; then
+        sed 's/^/      /' /tmp/pt.out | tail -12; return 1
+    fi
+    echo "promtool: $(grep -c SUCCESS /tmp/pt.out) test file(s) passed"
+    # give the scrapes a moment, then require all targets up and none down
+    local up_ct down_ct
+    for _ in $(seq 15); do
+        up_ct=$(pt query instant http://localhost:9090 'up == 1' 2>/dev/null | grep -c '=>')
+        down_ct=$(pt query instant http://localhost:9090 'up == 0' 2>/dev/null | grep -c '=>')
+        [ "${up_ct:-0}" -ge 8 ] && [ "${down_ct:-0}" -eq 0 ] && break
+        sleep 4
+    done
+    echo "targets up=$up_ct down=$down_ct (expect >=8 up, 0 down)"
+    [ "${up_ct:-0}" -ge 8 ] && [ "${down_ct:-0}" -eq 0 ]
+}
+
 t14() {  # the IO benchmark runs end to end at a small size and writes a valid CSV
     SIZE=16m TRIALS=1 RUNTIME=2 ./bench/io/run.sh /tmp/fio_ci.csv >/dev/null 2>&1
     local rows; rows=$(wc -l < /tmp/fio_ci.csv 2>/dev/null || echo 0)
@@ -125,6 +145,7 @@ check "04 Apptainer GPU smoke job prints the GPU on g1"   t04
 check "05 /shared has the same inode on head, c1 and c2"  t05
 check "08 --qos=debug --time=2:00:00 is rejected"         t08
 check "09 fifth job on QoS normal pends (MaxJobsPerUser)"  t09
+check "12 Prometheus targets up; alert rules unit-tested"  t12
 check "13 ansible site.yml --check reports no change"      t13
 check "14 IO benchmark runs and writes a valid CSV"       t14
 

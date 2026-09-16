@@ -135,12 +135,48 @@ services:
         condition: service_started
     networks: [cluster]
 
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    hostname: prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=2d
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus:ro
+      - promdata:/prometheus
+    ports:
+      - "9090:9090"   # open http://localhost:9090 on the host
+    networks: [cluster]
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    hostname: grafana
+    restart: unless-stopped
+    environment:
+      # throwaway local credentials; this Grafana is not exposed off the laptop
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin-throwaway
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    ports:
+      - "3000:3000"   # open http://localhost:3000 on the host (admin / admin-throwaway)
+    depends_on:
+      prometheus:
+        condition: service_started
+    networks: [cluster]
+
 volumes:
   dbdata:
   # backing store for the NFS export, mounted at /exports on the nfs node.
   shared:
   # node-local disk on c1 for the IO benchmark comparison.
   scratch:
+  promdata:
+  grafanadata:
 
 networks:
   cluster:

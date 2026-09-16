@@ -1,0 +1,47 @@
+groups:
+  - name: cluster
+    rules:
+      # a node's exporter has been unreachable: the node is down or the container died
+      - alert: NodeDown
+        expr: up{job="node"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "node {{ $labels.instance }} is down"
+          description: "node-exporter on {{ $labels.instance }} has not answered for 2 minutes."
+
+      # a compute node is drained or down: it will take no jobs
+      - alert: SlurmNodeUnavailable
+        expr: sum(slurm_nodes{state=~"drain|down"}) > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "a Slurm node is drained or down"
+          description: "{{ $value }} node(s) are in drain or down state for over 5 minutes."
+
+      # the most common waste on a shared GPU: a job holds the GPU but does not use it
+      - alert: IdleGPUAllocation
+        expr: gpu_utilization_percent < 10 and on() slurm_gpu_jobs_running > 0
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "GPU job running but the GPU is idle"
+          description: "A job holds the GPU while utilisation is under 10% for 10 minutes (often num_workers=0)."
+
+      # jobs are waiting while nodes sit idle: the scheduler or a limit is stuck
+      - alert: QueueStuck
+        expr: slurm_jobs{state="pending"} > 0 and on() slurm_jobs{state="running"} == 0 and on() slurm_nodes{state="idle"} > 0
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "jobs pending while nodes are idle"
+          description: "Pending jobs are not starting although idle nodes exist, for 15 minutes."
+
+      # the shared file system backing store is nearly full
+      - alert: SharedStorageLow
+        expr: node_filesystem_avail_bytes{mountpoint="/exports"} / node_filesystem_size_bytes{mountpoint="/exports"} < 0.10
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "shared storage is nearly full"
+          description: "The /shared backing store has under 10% free for 5 minutes; checkpoints will fail."
