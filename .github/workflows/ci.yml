@@ -1,0 +1,79 @@
+name: CI
+
+# Static checks that do not need the live cluster: shell, Python, the compose
+# file, the Ansible playbook, and the Prometheus alert rules (with their unit
+# tests). The full stack (make up / make check) needs privileged containers, a
+# kernel NFS server and a GPU, so it is exercised on the development host and
+# documented in the runbook rather than here.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shell:
+    name: Shell scripts (ShellCheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ShellCheck
+        run: |
+          shellcheck --version
+          find . -name '*.sh' -not -path './.git/*' -print0 | xargs -0 shellcheck -S error
+
+  python:
+    name: Python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Byte-compile every module
+        run: find . -name '*.py' -not -path './.git/*' -print0 | xargs -0 python -m py_compile
+      - name: Regenerate the report from the sample data
+        run: python scripts/gen_report.py
+
+  compose:
+    name: Compose file
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose.yaml
+        run: docker compose config -q
+
+  ansible:
+    name: Ansible playbook
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Ansible
+        run: pip install --quiet ansible
+      - name: Syntax check
+        working-directory: ansible
+        run: ansible-playbook --syntax-check site.yml
+
+  alerts:
+    name: Prometheus alert rules
+    runs-on: ubuntu-latest
+    env:
+      PROM_VERSION: 2.54.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install promtool
+        run: |
+          curl -sSL "https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}/prometheus-${PROM_VERSION}.linux-amd64.tar.gz" | tar xz
+          echo "$PWD/prometheus-${PROM_VERSION}.linux-amd64" >> "$GITHUB_PATH"
+      - name: Check alert rules
+        run: promtool check rules monitoring/prometheus/alerts.yml
+      - name: Unit-test alert rules
+        run: promtool test rules monitoring/prometheus/alerts.test.yml

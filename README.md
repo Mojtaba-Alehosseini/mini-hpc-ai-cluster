@@ -1,80 +1,176 @@
-# mini-hpc-ai-cluster
+<h1 align="center">mini-hpc-ai-cluster</h1>
 
-A small Slurm cluster on one laptop, built by one command and operated the way a
-shared system is operated: a scheduler with accounting, fair share and limits;
-shared storage with measured IO; containers; one GPU node; monitoring with
-alerts; more than one user; and a runbook of failures caused on purpose and then
-diagnosed. Every number in this file comes from a command in this repository.
+<p align="center">
+  <strong>A production-shaped Slurm cluster on a single machine.</strong><br>
+  A scheduler with accounting, fair share and limits · one real NFS export · a GPU node ·
+  Prometheus and Grafana · and a runbook of failures caused on purpose and then diagnosed.<br>
+  Brought up, configured and tested with one command.
+</p>
 
-A scheduler with accounting, fair share and limits; one real NFS export mounted on
-every node; Apptainer for job containers; one GPU node; Prometheus and Grafana
-with three dashboards and five unit-tested alert rules; and a runbook of ten
-failures caused on purpose and diagnosed. Fourteen acceptance tests pass from a
-cold `make up`. The full write-up is `docs/report.md`.
+<p align="center">
+  <a href="https://github.com/Mojtaba-Alehosseini/mini-hpc-ai-cluster/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Mojtaba-Alehosseini/mini-hpc-ai-cluster/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="Acceptance tests" src="https://img.shields.io/badge/acceptance%20tests-14%2F14-brightgreen">
+  <img alt="Slurm" src="https://img.shields.io/badge/Slurm-23.11-blue">
+  <img alt="Monitoring" src="https://img.shields.io/badge/Prometheus%20%2B%20Grafana-monitored-e6522c">
+  <a href="LICENSE"><img alt="Licence: MIT" src="https://img.shields.io/badge/licence-MIT-yellow"></a>
+</p>
 
-Monitoring: `http://localhost:9090` (Prometheus) and `http://localhost:3000`
-(Grafana, admin / admin-throwaway) once `make up` is done.
+---
 
+This repository stands up a small but real HPC cluster and operates it the way a shared
+system is operated. Every "node" is a container on one Docker bridge network, but the
+things that make a cluster hard are the real thing: Slurm 23.11 with a MariaDB accounting
+database, cgroup v2 confinement of job steps, a kernel NFS server exporting one shared
+file system to every node, a GPU scheduled as a generic resource, monitoring with
+unit-tested alert rules, several users with separate accounts, and a set of induced
+failures with their diagnoses.
+
+The point is not the toy scale. It is that the whole thing is **reproducible** (`make up`
+builds, starts and configures it; `make check` proves it), **measured** (every number in
+the docs comes from a command in this repository), and **honest** about its seams (a table
+below states exactly what is real and what is emulated).
+
+## Highlights
+
+- **Scheduler that behaves like a shared system.** Accounting in a real database, fair
+  share across accounts, per-user QoS limits, and cgroup v2 memory and CPU confinement of
+  every job step — each demonstrated by an acceptance test and a runbook incident.
+- **One real shared file system.** A kernel NFS server exports a single volume mounted at
+  `/shared` on every node, with a benchmarked comparison against node-local disk.
+- **A scheduled GPU.** A Quadro P2000 is presented to Slurm as `gres/gpu`; a short CNN
+  training run drives it to 99 % utilisation as a live load for the dashboards.
+- **Monitoring with tested alerts.** Prometheus scrapes node, Slurm and GPU exporters;
+  Grafana ships three provisioned dashboards; five alert rules each have a promtool unit
+  test that runs in CI.
+- **Configuration as code, and idempotent.** The container images carry only packages;
+  Ansible installs the munge key, the Slurm configuration, the users and the accounts, and
+  starts the daemons — a second run reports no change.
+- **A real runbook.** Ten failures are induced on purpose (bad GRES device, munge key
+  mismatch, out-of-memory kill, accounting outage, idle-GPU waste, and more) and each is
+  captured with its real diagnostic output.
+
+## Architecture
+
+```mermaid
+flowchart TB
+  subgraph host["One host · Docker bridge network &quot;cluster&quot;"]
+    direction TB
+    head["head<br/><small>slurmctld · slurmdbd</small>"]
+    db[("db<br/><small>MariaDB · accounting</small>")]
+    nfs["nfs<br/><small>kernel NFS server<br/>/exports ⇒ /shared</small>"]
+    c1["c1<br/><small>slurmd · 2 CPU<br/>+ /local scratch</small>"]
+    c2["c2<br/><small>slurmd · 2 CPU</small>"]
+    g1["g1<br/><small>slurmd · GPU<br/>Quadro P2000</small>"]
+    prom["Prometheus<br/><small>:9090</small>"]
+    graf["Grafana<br/><small>:3000</small>"]
+
+    head --- db
+    head --- c1 & c2 & g1
+    nfs -. "/shared (NFS)" .- head & c1 & c2 & g1
+    c1 & c2 & g1 & head -. metrics .-> prom
+    prom --> graf
+  end
 ```
-make up          # build, start the containers, configure with Ansible, wait for idle nodes
-make check       # the 14 acceptance tests in tests/run.sh
+
+The compute nodes are pinned to disjoint CPU sets and capped with Docker CPU and memory
+limits, so they behave like differently sized machines. Only `c1` carries a node-local
+disk (`/local`), which the storage benchmark compares against `/shared`.
+
+## Quickstart
+
+Requires a Linux host (or WSL2) with Docker Engine; for the GPU node, an NVIDIA GPU with
+the NVIDIA Container Toolkit. Full setup notes, including WSL2, are in
+[`docs/SETUP.md`](docs/SETUP.md).
+
+```bash
+make up          # build images, start the containers, configure with Ansible, wait for idle nodes
+make check       # run the 14 acceptance tests in tests/run.sh
 make bench       # IO and small-file benchmarks -> bench/results/*.csv
 make report      # regenerate docs/report.md from those CSVs
 make idempotent  # a second Ansible run in check mode; must report no change
-make down        # stop, keep volumes
-make reset       # stop and delete everything
+make down        # stop the containers, keep the volumes
+make reset       # stop and delete everything, including volumes
 ```
 
-## Results (a run on the development laptop; see docs/report.md)
+Once `make up` finishes, the monitoring stack is on the host at
+**http://localhost:9090** (Prometheus) and **http://localhost:3000** (Grafana,
+`admin` / `admin-throwaway`).
 
-- **Shared storage IO.** Sequential write to `/shared` (NFS) ~72 MB/s versus ~313
-  MB/s to a node-local disk.
-- **Small files, the headline.** On `/shared`, reading a dataset as tar shards is
-  about **12x** faster than as loose 4 KiB files (46 vs 3.7 MB/s), and NFS creates
-  small files ~10x slower than a local disk (54 vs 670 files/s). Pack datasets
-  into shards.
-- **Scheduler.** Over-memory jobs are killed `OUT_OF_MEMORY`, over-time jobs
-  `TIMEOUT`, the per-user QoS cap holds, and fair share lifts an under-served
-  account (pending priority 15000 vs 7500). Real output in `runbook/RUNBOOK.md`.
-- **GPU.** A CNN training job scheduled on the GPU node through Slurm `gres/gpu`
-  drives the Quadro P2000 to 99% utilisation: ~2290 samples/s on synthetic 64x64
-  images, 161 MiB peak GPU memory.
-
-The containers carry only packages. Ansible (`ansible/site.yml`, over the
-Docker connection) installs the munge key, the Slurm configuration, the users
-and the accounts, and starts the daemons. It is idempotent.
-
-Setup on Windows: `docs/SETUP.md`. Decisions and their reasons: `docs/DECISIONS.md`.
-
-## What is real and what is emulated
+## What is real, and what is emulated
 
 | Real | Emulated |
 |---|---|
-| Slurm 23.11 with slurmdbd accounting, fair share, QoS limits | Nodes are containers on one kernel, not machines |
-| cgroup v2 confinement of job steps | The `cluster` network is a Docker bridge, not a switch |
+| Slurm 23.11 with slurmdbd accounting, fair share and QoS limits | Nodes are containers on one kernel, not separate machines |
+| cgroup v2 confinement of job steps (memory and CPU) | The `cluster` network is a Docker bridge, not a switched fabric |
 | Kernel NFS server; `/shared` is one export mounted on every node | Node sizes are Docker CPU and memory limits |
-| One Pascal GPU (Quadro P2000, 4 GB), scheduled as a Slurm GRES | The nodes run privileged (NFS mount, cgroup, GPU) |
-| Apptainer runs job containers on the nodes | GPU is `/dev/dxg` on WSL, so it does not enter an Apptainer container |
-| Prometheus + Grafana, 3 dashboards, 5 alert rules unit-tested | Users with separate UIDs and accounts, one physical host |
+| One Pascal GPU (Quadro P2000, 4 GB) scheduled as a Slurm GRES | Nodes run privileged (for NFS mount, cgroups and the GPU) |
+| Apptainer runs job containers on the nodes | One physical host, one clock |
+| Prometheus + Grafana, three dashboards, five unit-tested alert rules | On WSL the GPU is `/dev/dxg`, so it does not enter an Apptainer container |
 
-## Layout
+## Results
+
+A run on the development machine (Quadro P2000, Docker on WSL2). Every figure is generated
+by `scripts/gen_report.py` from the CSVs under `bench/results/`; the full write-up is
+[`docs/report.md`](docs/report.md).
+
+- **Shared storage.** Sequential write to `/shared` (NFS) is about **72 MB/s** against
+  **313 MB/s** to a node-local disk — the expected cost of one server behind a bridge.
+- **Small files — the headline for AI datasets.** On `/shared`, reading a dataset as tar
+  shards is about **12× faster** than as loose 4 KiB files (46 vs 3.7 MB/s), and NFS
+  creates small files roughly **10× slower** than local disk (54 vs 670 files/s). Pack
+  datasets into shards.
+- **Scheduler.** Over-memory jobs are killed `OUT_OF_MEMORY`, over-time jobs `TIMEOUT`,
+  the per-user QoS cap holds, and fair share lifts an under-served account (pending
+  priority 15000 vs 7500). Real output in [`runbook/RUNBOOK.md`](runbook/RUNBOOK.md).
+- **GPU.** A CNN training job scheduled through Slurm `gres/gpu` drives the P2000 to
+  **99 % utilisation** at about **2290 samples/s** (161 MiB peak GPU memory) on synthetic
+  64×64 images.
+
+## Monitoring
+
+Prometheus scrapes a node exporter on every node, a Slurm exporter on the head node, and a
+GPU exporter on `g1`. Grafana is provisioned with three dashboards (Cluster, GPU node,
+Storage). Five alert rules fire on real conditions — a node down, a node Slurm cannot
+reach, a job holding the GPU below 10 % utilisation, a stuck queue, and shared storage
+running low — and every rule has a promtool unit test in
+[`monitoring/prometheus/alerts.test.yml`](monitoring/prometheus/alerts.test.yml) that runs
+in CI.
+
+## Repository layout
 
 ```
 compose.yaml          the cluster: nfs, db, head, c1, c2, g1, prometheus, grafana
 docker/node/          one image for every node; entrypoint and supervisord configs
-ansible/              inventory, site.yml and roles that configure the nodes
+ansible/              inventory, site.yml and the roles that configure the nodes
 slurm/                slurm.conf, cgroup.conf, gres.conf, slurmdbd.conf (source of truth)
 storage/              the NFS exports file
-containers/           Apptainer image definitions and GPU job scripts
+containers/           Apptainer image definition and the GPU job scripts
 monitoring/           Prometheus config + alerts, the exporters, Grafana dashboards
 runbook/              RUNBOOK.md and induce/verify scripts for ten incidents
 bench/                IO and small-file benchmarks; results/ holds the CSVs
 scripts/              wait_ready.sh, gen_report.py; host/ has WSL2 setup + checks
 tests/run.sh          the 14 numbered acceptance tests
 docs/                 SETUP.md, DECISIONS.md, report.md (generated)
+.github/workflows/    CI: shell, Python, compose, Ansible and alert-rule checks
 ```
 
-Benchmarks: `make bench` writes CSVs under `bench/results/`, then `make report`
-regenerates `docs/report.md` from them. See `bench/README.md`.
+## How it is built
 
-Licence: MIT.
+The images are deliberately thin: they carry packages, not state. Ansible
+([`ansible/site.yml`](ansible/site.yml)), running over the Docker connection, installs the
+munge key, writes the Slurm and NFS configuration, creates the users and the accounting
+hierarchy, mounts `/shared`, and starts the daemons under supervisord. The playbook is
+idempotent — `make idempotent` runs it again in check mode and must report no change,
+which is one of the acceptance tests.
+
+## Documentation
+
+- [`docs/SETUP.md`](docs/SETUP.md) — host prerequisites and setup, including WSL2.
+- [`docs/DECISIONS.md`](docs/DECISIONS.md) — the design decisions and their reasons.
+- [`docs/report.md`](docs/report.md) — the measured write-up (generated from the data).
+- [`runbook/RUNBOOK.md`](runbook/RUNBOOK.md) — the ten induced incidents and their diagnoses.
+- [`bench/README.md`](bench/README.md) — how the benchmarks are run and read.
+
+## Licence
+
+Released under the [MIT Licence](LICENSE).
