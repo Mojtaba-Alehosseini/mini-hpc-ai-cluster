@@ -1,0 +1,2 @@
+run,device,samples_per_sec,max_mem_mib
+cnn_train 300 steps batch 64,Quadro P2000 (cuda),2289.2,161

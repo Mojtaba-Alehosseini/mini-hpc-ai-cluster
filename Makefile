@@ -1,7 +1,7 @@
 COMPOSE ?= docker compose
 PLAYBOOK ?= ansible-playbook
 
-.PHONY: up down reset check build logs ps configure idempotent bench images
+.PHONY: up down reset check build logs ps configure idempotent bench images train_env report
 
 ## up: build and start the containers, then configure them with Ansible
 up: secrets/munge.key
@@ -35,6 +35,18 @@ images:
 	$(COMPOSE) exec -T g1 mkdir -p /shared/images
 	docker cp containers/cuda.def minihpc-g1-1:/tmp/cuda.def
 	$(COMPOSE) exec -T g1 apptainer build --force /shared/images/cuda.sif /tmp/cuda.def
+
+## train_env: build the shared Python venv with torch and stage the training job
+## The job file is written through the container's stdin, not "docker cp":
+## /shared is an NFS mount inside the container, which docker cp cannot write to.
+train_env:
+	$(COMPOSE) exec -T g1 bash -c 'test -x /shared/venv/bin/python || python3 -m venv /shared/venv; /shared/venv/bin/pip install -q --upgrade pip; /shared/venv/bin/pip install -q torch --index-url https://download.pytorch.org/whl/cu121'
+	$(COMPOSE) exec -T g1 mkdir -p /shared/jobs
+	$(COMPOSE) exec -T g1 bash -c 'cat > /shared/jobs/train_demo.py' < containers/jobs/train_demo.py
+
+## report: regenerate docs/report.md from the benchmark CSVs
+report:
+	python3 scripts/gen_report.py
 
 SIZE ?= 512m
 NFILES ?= 20000
