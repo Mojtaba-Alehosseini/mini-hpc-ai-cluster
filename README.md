@@ -53,20 +53,20 @@ below states exactly what is real and what is emulated).
 
 ```mermaid
 flowchart TB
-  subgraph host["One host · Docker bridge network &quot;cluster&quot;"]
+  subgraph host["One host — Docker bridge network: cluster"]
     direction TB
-    head["head<br/><small>slurmctld · slurmdbd</small>"]
-    db[("db<br/><small>MariaDB · accounting</small>")]
-    nfs["nfs<br/><small>kernel NFS server<br/>/exports ⇒ /shared</small>"]
-    c1["c1<br/><small>slurmd · 2 CPU<br/>+ /local scratch</small>"]
-    c2["c2<br/><small>slurmd · 2 CPU</small>"]
-    g1["g1<br/><small>slurmd · GPU<br/>Quadro P2000</small>"]
-    prom["Prometheus<br/><small>:9090</small>"]
-    graf["Grafana<br/><small>:3000</small>"]
+    nfs["nfs — kernel NFS server, exports /shared"]
+    head["head — slurmctld and slurmdbd"]
+    db[("db — MariaDB accounting")]
+    c1["c1 — slurmd, 2 CPU, /local disk"]
+    c2["c2 — slurmd, 2 CPU"]
+    g1["g1 — slurmd, GPU (Quadro P2000)"]
+    prom["Prometheus :9090"]
+    graf["Grafana :3000"]
 
     head --- db
     head --- c1 & c2 & g1
-    nfs -. "/shared (NFS)" .- head & c1 & c2 & g1
+    nfs -. "/shared" .- head & c1 & c2 & g1
     c1 & c2 & g1 & head -. metrics .-> prom
     prom --> graf
   end
