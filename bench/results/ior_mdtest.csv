@@ -1,0 +1,11 @@
+fs,tool,metric,value,unit,notes
+local,ior,write,268.80,MiB/s,POSIX O_DIRECT, 2 tasks
+shared,ior,write,92.82,MiB/s,POSIX O_DIRECT, 2 tasks (NFS)
+local,ior,read,4891,MiB/s,buffered (served from page cache)
+shared,ior,read,9936,MiB/s,buffered (served from page cache)
+local,mdtest,create,31761.997,ops/s,file creation
+shared,mdtest,create,102.024,ops/s,file creation (NFS)
+local,mdtest,stat,441002.786,ops/s,file stat
+shared,mdtest,stat,507170.979,ops/s,file stat (NFS, cached)
+local,mdtest,removal,183511.314,ops/s,file removal
+shared,mdtest,removal,97.049,ops/s,file removal (NFS)

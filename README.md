@@ -126,6 +126,24 @@ by `scripts/gen_report.py` from the CSVs under `bench/results/`; the full write-
   **99 % utilisation** at about **2290 samples/s** (161 MiB peak GPU memory) on synthetic
   64×64 images.
 
+## Real workloads on the cluster
+
+Beyond the acceptance tests, the cluster runs real HPC workloads through Slurm.
+The full write-up, with commands and tables, is in
+[`docs/hpc-on-the-cluster.md`](docs/hpc-on-the-cluster.md).
+
+- **A kernel suite across paradigms.** The six kernels of the external
+  [`hpc-patterns`](https://github.com/Mojtaba-Alehosseini/hpc-patterns) suite
+  (heat, ising, kmeans, lj, cg, fft) build in a node container and run through
+  Slurm as serial, OpenMP and four-rank MPI jobs across both compute nodes —
+  every run passing its correctness check, including a million-unknown
+  conjugate-gradient solve. Reproduce: `scripts/run_hpc_patterns.sh`.
+- **IOR and mdtest, built from source.** The standard HPC IO benchmarks confirm
+  the storage story: a direct-IO write to `/shared` is about **2.9× slower** than
+  to local disk (93 vs 269 MiB/s), and metadata is the real cost — NFS creates
+  small files roughly **310× slower** and removes them **~1900× slower** than
+  local disk. Reproduce: `bench/io/ior_mdtest.sh`.
+
 ## Monitoring
 
 Prometheus scrapes a node exporter on every node, a Slurm exporter on the head node, and a
@@ -135,6 +153,13 @@ reach, a job holding the GPU below 10 % utilisation, a stuck queue, and shared s
 running low — and every rule has a promtool unit test in
 [`monitoring/prometheus/alerts.test.yml`](monitoring/prometheus/alerts.test.yml) that runs
 in CI.
+
+The dashboards during a live run — the cluster scheduling MPI jobs, the GPU node
+under a training job, and the shared storage moving data:
+
+![Cluster dashboard](docs/figs/dashboard-cluster.jpg)
+![GPU node dashboard](docs/figs/dashboard-gpu.jpg)
+![Storage dashboard](docs/figs/dashboard-storage.jpg)
 
 ## Repository layout
 
@@ -147,10 +172,10 @@ storage/              the NFS exports file
 containers/           Apptainer image definition and the GPU job scripts
 monitoring/           Prometheus config + alerts, the exporters, Grafana dashboards
 runbook/              RUNBOOK.md and induce/verify scripts for ten incidents
-bench/                IO and small-file benchmarks; results/ holds the CSVs
-scripts/              wait_ready.sh, gen_report.py; host/ has WSL2 setup + checks
+bench/                IO and small-file benchmarks (fio, IOR/mdtest); results/ holds the CSVs
+scripts/              wait_ready.sh, gen_report.py, run_hpc_patterns.sh; host/ has WSL2 setup
 tests/run.sh          the 14 numbered acceptance tests
-docs/                 SETUP.md, DECISIONS.md, report.md (generated)
+docs/                 SETUP.md, DECISIONS.md, report.md, hpc-on-the-cluster.md, figs/
 .github/workflows/    CI: shell, Python, compose, Ansible and alert-rule checks
 ```
 
@@ -168,6 +193,7 @@ which is one of the acceptance tests.
 - [`docs/SETUP.md`](docs/SETUP.md) — host prerequisites and setup, including WSL2.
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) — the design decisions and their reasons.
 - [`docs/report.md`](docs/report.md) — the measured write-up (generated from the data).
+- [`docs/hpc-on-the-cluster.md`](docs/hpc-on-the-cluster.md) — real workloads run on the cluster (kernels, IOR/mdtest, and the dashboards under load).
 - [`runbook/RUNBOOK.md`](runbook/RUNBOOK.md) — the ten induced incidents and their diagnoses.
 - [`bench/README.md`](bench/README.md) — how the benchmarks are run and read.
 
