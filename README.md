@@ -43,9 +43,12 @@ docker/node/          one image for every node; entrypoint and supervisord confi
 ansible/              inventory, site.yml and roles that configure the nodes
 slurm/                slurm.conf, cgroup.conf, slurmdbd.conf (the source of truth)
 storage/              the NFS exports file
+bench/                IO and small-file benchmarks; results/ holds the CSVs
 scripts/              wait_ready.sh; host/ has the WSL2 install and platform checks
 tests/run.sh          numbered acceptance tests
 docs/                 SETUP.md, DECISIONS.md
 ```
+
+Benchmarks: `make bench` writes CSVs under `bench/results/`. See `bench/README.md`.
 
 Licence: MIT.

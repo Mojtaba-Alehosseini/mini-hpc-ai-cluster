@@ -70,6 +70,10 @@ services:
         limits:
           cpus: "2"
           memory: 2G
+    volumes:
+      # node-local disk for the IO benchmark: /local (ext4 volume) versus
+      # /shared (NFS). Only c1 has it; the benchmarks run from c1.
+      - scratch:/local
     depends_on:
       head:
         condition: service_started
@@ -101,6 +105,8 @@ volumes:
   dbdata:
   # backing store for the NFS export, mounted at /exports on the nfs node.
   shared:
+  # node-local disk on c1 for the IO benchmark comparison.
+  scratch:
 
 networks:
   cluster:

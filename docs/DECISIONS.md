@@ -101,3 +101,12 @@ An NFS mount inside a container does not survive a container restart, and there
 is no fstab boot mount. The `nfs_client` role mounts `/shared` when it is not
 already mounted, so `make up` restores it and a second run is a no-op. Same
 trade as D10: a clean, ordered bring-up over a boot-time mount.
+
+**D15. The IO benchmark compares `/shared` against a node-local ext4 volume.**
+To measure the cost of the network file system honestly, `bench/io/run.sh` runs
+fio against `/shared` (NFS) and against `/local`, a Docker volume mounted only on
+c1 as a stand-in for a node-local disk. Read results are influenced by NFS
+server-side caching, which is stated in `bench/README.md` rather than hidden. The
+small-file experiment (`bench/io/smallfiles.sh`) is the one that matters for AI
+datasets: it shows the metadata cost of many tiny files on a shared file system
+versus a few tar shards.

@@ -87,12 +87,20 @@ t13() {  # the Ansible playbook is idempotent: a second run in check mode
     ! echo "$out" | grep -qE 'changed=[1-9]|failed=[1-9]|unreachable=[1-9]'
 }
 
+t14() {  # the IO benchmark runs end to end at a small size and writes a valid CSV
+    SIZE=16m TRIALS=1 RUNTIME=2 ./bench/io/run.sh /tmp/fio_ci.csv >/dev/null 2>&1
+    local rows; rows=$(wc -l < /tmp/fio_ci.csv 2>/dev/null || echo 0)
+    echo "rows=$rows"
+    head -1 /tmp/fio_ci.csv | grep -q '^fs,test,jobs,trial,metric,value' && [ "$rows" -gt 1 ]
+}
+
 check "01 sinfo: c1,c2 idle in cpu, c1 in debug"        t01
 check "02 sbatch as alice completes with account/partition" t02
 check "05 /shared has the same inode on head, c1 and c2"  t05
 check "08 --qos=debug --time=2:00:00 is rejected"         t08
 check "09 fifth job on QoS normal pends (MaxJobsPerUser)"  t09
 check "13 ansible site.yml --check reports no change"      t13
+check "14 IO benchmark runs and writes a valid CSV"       t14
 
 echo "passed $pass, failed $fail"
 [ "$fail" -eq 0 ]
