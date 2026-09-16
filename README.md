@@ -9,8 +9,10 @@ diagnosed. Every number in this file comes from a command in this repository.
 Work in progress. So far: the scheduler, the accounting database, an NFS server,
 two CPU nodes and a GPU node are up and configured by Ansible; `/shared` is one
 real NFS export mounted on every node; GPU jobs run and Apptainer runs
-containers; the IO benchmarks are in place; and Prometheus and Grafana monitor
-the cluster with three dashboards and five alert rules. The runbook follows.
+containers; the IO benchmarks are in place; Prometheus and Grafana monitor the
+cluster with three dashboards and five alert rules; and `runbook/RUNBOOK.md`
+documents ten failures caused on purpose and diagnosed. A written report is the
+last piece.
 
 Monitoring: `http://localhost:9090` (Prometheus) and `http://localhost:3000`
 (Grafana, admin / admin-throwaway) once `make up` is done.
@@ -50,6 +52,7 @@ slurm/                slurm.conf, cgroup.conf, gres.conf, slurmdbd.conf (source 
 storage/              the NFS exports file
 containers/           Apptainer image definitions and GPU job scripts
 monitoring/           Prometheus config + alerts, the exporters, Grafana dashboards
+runbook/              RUNBOOK.md and induce/verify scripts for ten incidents
 bench/                IO and small-file benchmarks; results/ holds the CSVs
 scripts/              wait_ready.sh; host/ has the WSL2 install and platform checks
 tests/run.sh          numbered acceptance tests

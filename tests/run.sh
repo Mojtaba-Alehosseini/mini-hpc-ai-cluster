@@ -84,6 +84,55 @@ t05() {  # /shared is the same file system on every node: a file written on head
     [ -n "$i_head" ] && [ "$i_head" = "$i_c1" ] && [ "$i_c1" = "$i_c2" ]
 }
 
+t06() {  # a job that uses more memory than it asked for is killed by the cgroup
+    # ask for 256 MB, then try to allocate ~700 MB
+    local job; job=$(as_user alice sbatch --parsable --mem=256M \
+        --wrap="python3 -c 'a=bytearray(700*1024*1024); import time; time.sleep(20)'") || return 1
+    wait_state "$job" '^(OUT_OF_MEMORY|FAILED)$' 90 || return 1
+    local st; st=$(hd sacct -j "$job" -X -n -o State,ExitCode -P | tr -d ' ')
+    echo "job $job ended: $st"
+    grep -qE '^(OUT_OF_MEMORY|FAILED)' <<<"$st"
+}
+
+t07() {  # a job that runs past its --time is killed at TIMEOUT
+    local job; job=$(as_user alice sbatch --parsable --time=00:01:00 --wrap='sleep 300') || return 1
+    wait_state "$job" '^TIMEOUT$' 130 || return 1
+    local st; st=$(hd sacct -j "$job" -X -n -o State -P | tr -d ' ')
+    echo "job $job ended: $st"
+    [ "$st" = "TIMEOUT" ]
+}
+
+t10() {  # fair share: bob's account runs first and builds usage, so when carol
+         # submits, her jobs outrank his pending ones (lab-b is under-served)
+    hd scancel -u bob >/dev/null 2>&1; hd scancel -u carol >/dev/null 2>&1; sleep 2
+    local j
+    for _ in $(seq 20); do j=$(as_user bob sbatch --parsable --qos=high --wrap='sleep 200'); done
+    sleep 28   # let lab-a accrue usage while its jobs run
+    for _ in $(seq 5); do j=$(as_user carol sbatch --parsable --qos=high --wrap='sleep 200'); done
+    sleep 8
+    local bob_p carol_p
+    bob_p=$(hd squeue -h -u bob   -t PENDING -o '%Q' | sort -rn | head -1)
+    carol_p=$(hd squeue -h -u carol -t PENDING -o '%Q' | sort -rn | head -1)
+    echo "top pending priority: bob=$bob_p carol=$carol_p"
+    hd scancel -u bob >/dev/null 2>&1; hd scancel -u carol >/dev/null 2>&1
+    [ -n "$carol_p" ] && [ -n "$bob_p" ] && [ "$carol_p" -gt "$bob_p" ]
+}
+
+t11() {  # a drained node takes no new jobs; resume brings it back
+    hd scontrol update nodename=c2 state=drain reason=test >/dev/null || return 1
+    sleep 2
+    local drained; drained=$(hd sinfo -h -n c2 -o '%t')
+    echo "c2 after drain: $drained"
+    # a new job must not land on c2
+    local job; job=$(as_user alice sbatch --parsable --nodelist=c1 --wrap=hostname)
+    wait_state "$job" '^COMPLETED$' 60
+    hd scontrol update nodename=c2 state=resume >/dev/null
+    sleep 2
+    local back; back=$(hd sinfo -h -n c2 -o '%t')
+    echo "c2 after resume: $back"
+    grep -q 'drain' <<<"$drained" && grep -q 'idle' <<<"$back"
+}
+
 t08() {  # a debug job asking for two hours is rejected at submission
     local out; out=$(as_user alice sbatch --qos=debug --partition=debug --time=2:00:00 --wrap=hostname 2>&1)
     echo "$out"
@@ -143,8 +192,12 @@ check "02 sbatch as alice completes with account/partition" t02
 check "03 srun --gres=gpu:1 nvidia-smi shows the P2000"   t03
 check "04 Apptainer GPU smoke job prints the GPU on g1"   t04
 check "05 /shared has the same inode on head, c1 and c2"  t05
+check "06 over-memory job is killed (cgroup)"             t06
+check "07 over-time job is killed at TIMEOUT"             t07
 check "08 --qos=debug --time=2:00:00 is rejected"         t08
 check "09 fifth job on QoS normal pends (MaxJobsPerUser)"  t09
+check "10 fair share: carol outranks bob after his usage" t10
+check "11 drain stops new jobs on c2; resume restores it" t11
 check "12 Prometheus targets up; alert rules unit-tested"  t12
 check "13 ansible site.yml --check reports no change"      t13
 check "14 IO benchmark runs and writes a valid CSV"       t14
